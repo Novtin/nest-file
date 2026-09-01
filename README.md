@@ -19,7 +19,7 @@ import {ModuleHelper} from '@steroidsjs/nest/infrastructure/helpers/ModuleHelper
     ...coreModule,
     tables: [
         ...coreModule.tables,
-        ...ModuleHelper.importDir(__dirname + '/tables'),
+        ...nestFileTables,
     ],
     module: (config: IFileModuleConfig) => {
         const module = coreModule.module(config);
@@ -180,3 +180,7 @@ class GetFileStorageParamsUseCase implements IGetFileStorageParamsUseCase {
 })
 export class FileModule {}
 ```
+
+## Кастомизация имени поля
+
+По умолчанию, интерцептор ожидает, что файл будет передан в поле с именем `file`. Для изменения имени поля используется декоратор `@FileUploadFieldName`.

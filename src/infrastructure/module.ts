@@ -17,12 +17,19 @@ import {IFileStorageFactory} from '../domain/interfaces/IFileStorageFactory';
 import {fileValidators} from '../domain/validators';
 import {FILE_VALIDATORS_TOKEN} from '../domain/constants/FileValidatorsToken';
 import {FILE_STORAGES_TOKEN} from '../domain/interfaces/IFileStorage';
+import {ICreateImagePreviewUseCase} from '../domain/interfaces/ICreateImagePreviewUseCase';
+import {CreateImagePreviewUsecase} from '../usecases/createImagePreview/CreateImagePreviewUsecase';
+import {IImagePreviewGeneratorResolver} from '../domain/interfaces/IImagePreviewGeneratorResolver';
+import {IImagePreviewGenerator, IImagePreviewGeneratorsToken} from '../domain/interfaces/IImagePreviewGenerator';
 import {FileEventsSubscriber} from './subscribers/FileEventsSubscriber';
 import {CronJobsRegister} from './services/CronJobsRegister';
 import {IFileModuleConfig} from './config';
 import {FileImageRepository} from './repositories/FileImageRepository';
 import {FileRepository} from './repositories/FileRepository';
 import {ClearUnusedFilesCommand} from './commands/ClearUnusedFilesCommand';
+import {ImagePreviewGeneratorResolver} from './services/ImagePreviewGeneratorResolver';
+import {SharpImagePreviewGenerator} from './adapters/previewGenerators/SharpImagePreviewGenerator';
+import {SvgImagePreviewGenerator} from './adapters/previewGenerators/SvgImagePreviewGenerator';
 
 export default (config: IFileModuleConfig) => ({
     controllers: [],
@@ -60,6 +67,22 @@ export default (config: IFileModuleConfig) => ({
         {
             provide: IFileTypeService,
             useClass: FileTypeService,
+        },
+
+        {
+            provide: ICreateImagePreviewUseCase,
+            useClass: CreateImagePreviewUsecase,
+        },
+        {
+            provide: IImagePreviewGeneratorResolver,
+            useClass: ImagePreviewGeneratorResolver,
+        },
+        SharpImagePreviewGenerator,
+        SvgImagePreviewGenerator,
+        {
+            provide: IImagePreviewGeneratorsToken,
+            useFactory: (...generators: IImagePreviewGenerator[]) => generators,
+            inject: [SvgImagePreviewGenerator, SharpImagePreviewGenerator],
         },
 
         {

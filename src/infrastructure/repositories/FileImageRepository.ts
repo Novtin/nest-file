@@ -1,11 +1,12 @@
-import {InjectRepository} from '@steroidsjs/nest-typeorm';
-import {Repository} from '@steroidsjs/typeorm';
+import {InjectRepository} from '@nestjs/typeorm';
+import {Repository} from 'typeorm';
 import {Inject, Injectable} from '@nestjs/common';
 import {CrudRepository} from '@steroidsjs/nest/infrastructure/repositories/CrudRepository';
 import {IFileImageRepository} from '../../domain/interfaces/IFileImageRepository';
 import {FileImageModel} from '../../domain/models/FileImageModel';
 import {FileImageTable} from '../tables/FileImageTable';
 import {IFileStorageFactory} from '../../domain/interfaces/IFileStorageFactory';
+import {CANONICAL_PATH_SEPARATOR} from '../../domain/interfaces/IFileStorage';
 
 @Injectable()
 export class FileImageRepository extends CrudRepository<FileImageModel> implements IFileImageRepository {
@@ -34,6 +35,8 @@ export class FileImageRepository extends CrudRepository<FileImageModel> implemen
             ])
             .where({storageName})
             .many();
-        return files.map(file => [file.folder, file.fileName].join('/'));
+        return files.map(file => [file.folder, file.fileName]
+            .filter(Boolean)
+            .join(CANONICAL_PATH_SEPARATOR));
     }
 }

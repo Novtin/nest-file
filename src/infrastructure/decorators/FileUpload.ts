@@ -11,7 +11,7 @@ interface IFileUploadOptions {
     allowedMimeTypes?: string[],
 }
 
-/** @deprecated Use FileUploadInterceptor */
+/** @deprecated Use TemporaryFileUploadInterceptor */
 export function FileUpload(options?: IFileUploadOptions) {
     return applyDecorators(
         UseInterceptors(

@@ -8,8 +8,7 @@ import {DataMapper} from '@steroidsjs/nest/usecases/helpers/DataMapper';
 import * as Sentry from '@sentry/node';
 import {Inject, Injectable, Optional, Scope} from '@nestjs/common';
 import {FileWriteResult} from '../dtos/FileWriteResult';
-import {IFileLocalStorage} from '../interfaces/IFileLocalStorage';
-import {IFileStorageConfig} from '../interfaces/IFileStorage';
+import {CANONICAL_PATH_SEPARATOR, IFileStorage, IFileStorageConfig} from '../interfaces/IFileStorage';
 import {IFileReadable} from '../interfaces/IFileReadable';
 import {IFileWritable} from '../interfaces/IFileWritable';
 import FileStorageEnum from '../enums/FileStorageEnum';
@@ -23,7 +22,7 @@ const DEFAULT_FILE_ENCODING: BufferEncoding = 'utf8';
 @Injectable({
     scope: Scope.TRANSIENT,
 })
-export class FileLocalStorage implements IFileLocalStorage {
+export class FileLocalStorage implements IFileStorage {
     /**
      * Absolute path to root user files dir
      */
@@ -100,23 +99,37 @@ export class FileLocalStorage implements IFileLocalStorage {
         return (stats.birthtime || stats.mtime).getTime();
     }
 
-    getFilesPaths(relativePath = ''): string[] | null {
+    /**
+     * Converts a raw path (as returned by the storage driver) into the
+     * canonical form used by this module: CANONICAL_PATH_SEPARATOR only.
+     */
+    protected toCanonicalPath(rawPath: string) {
+        return rawPath
+            .replace(/\\/g, CANONICAL_PATH_SEPARATOR)
+            .replace(/^\/+/, '');
+    }
+
+    async getFilesPaths(relativePath = ''): Promise<string[] | null> {
         try {
             const folderPath = join(this.rootPath, relativePath);
             const files = fs.readdirSync(folderPath);
-            let results = [];
+            let results: string[] = [];
 
-            files.forEach(file => {
+            for (const file of files) {
                 const filePath = join(folderPath, file);
                 const fileRelativePath = join(relativePath, file);
-                const stat = fs.statSync(filePath);
+                const statFile = fs.statSync(filePath);
 
-                if (stat.isDirectory()) {
-                    results = results.concat(this.getFilesPaths(fileRelativePath));
+                if (statFile.isDirectory()) {
+                    const nestedFiles = await this.getFilesPaths(fileRelativePath);
+
+                    if (nestedFiles) {
+                        results = results.concat(nestedFiles);
+                    }
                 } else {
-                    results.push(fileRelativePath);
+                    results.push(this.toCanonicalPath(fileRelativePath));
                 }
-            });
+            }
 
             return results;
         } catch (error) {

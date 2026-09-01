@@ -1,5 +1,5 @@
-import {InjectRepository} from '@steroidsjs/nest-typeorm';
-import {Repository} from '@steroidsjs/typeorm';
+import {InjectRepository} from '@nestjs/typeorm';
+import {Repository} from 'typeorm';
 import {Inject, Injectable} from '@nestjs/common';
 import {CrudRepository} from '@steroidsjs/nest/infrastructure/repositories/CrudRepository';
 import {DataMapper} from '@steroidsjs/nest/usecases/helpers/DataMapper';
@@ -7,6 +7,7 @@ import {IFileRepository} from '../../domain/interfaces/IFileRepository';
 import {FileTable} from '../tables/FileTable';
 import {FileModel} from '../../domain/models/FileModel';
 import {IFileStorageFactory} from '../../domain/interfaces/IFileStorageFactory';
+import {CANONICAL_PATH_SEPARATOR} from '../../domain/interfaces/IFileStorage';
 
 @Injectable()
 export class FileRepository extends CrudRepository<FileModel> implements IFileRepository {
@@ -49,7 +50,9 @@ export class FileRepository extends CrudRepository<FileModel> implements IFileRe
             ])
             .where({storageName})
             .many();
-        return files.map(file => [file.folder, file.fileName].join('/'));
+        return files.map(file => [file.folder, file.fileName]
+            .filter(Boolean)
+            .join(CANONICAL_PATH_SEPARATOR));
     }
 
     public async getUnusedFilesIds(config: {

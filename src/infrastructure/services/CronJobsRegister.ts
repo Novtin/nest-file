@@ -1,7 +1,7 @@
 import {Inject, Injectable, Optional} from '@nestjs/common';
 import {SchedulerRegistry} from '@nestjs/schedule';
 import {CronJob} from 'cron';
-import {OnApplicationBootstrap} from '@nestjs/common/interfaces/hooks/on-application-bootstrap.interface';
+import type {OnApplicationBootstrap} from '@nestjs/common/interfaces/hooks/on-application-bootstrap.interface';
 import {FileConfigService} from '../../domain/services/FileConfigService';
 import {DeleteLostAndTemporaryFilesService} from '../../domain/services/DeleteLostAndTemporaryFilesService';
 

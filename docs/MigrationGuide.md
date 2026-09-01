@@ -50,6 +50,238 @@ export class FileModule {}
 3. Если проект реализует собственное `IFileStorage`, обновить сигнатуру `write` и `init`. В `init` модуль передаёт `storageName` вместе с `options`; при необходимости сохраните это имя в классе хранилища для вызова `IGetFileStorageParamsUseCase`.
    Добавьте драйвер в `providers` модуля и задайте ему scope `TRANSIENT`, чтобы каждое именованное хранилище получало отдельный экземпляр.
 
+## [0.9.0](../CHANGELOG.md#090-2026-08-14) (2026-08-14)
+
+### Переименование интерцептора загрузки
+
+`FileUploadInterceptor` переименован в `TemporaryFileUploadInterceptor`. Если интерцептор импортируется в приложении напрямую, замените импорт и класс в `@UseInterceptors`:
+
+```ts
+// До
+import {FileUploadInterceptor} from '@steroidsjs/nest-file/infrastructure/interceptors/FileUploadInterceptor';
+
+@UseInterceptors(FileUploadInterceptor)
+```
+
+```ts
+// После
+import {TemporaryFileUploadInterceptor} from '@steroidsjs/nest-file/infrastructure/interceptors/TemporaryFileUploadInterceptor';
+
+@UseInterceptors(TemporaryFileUploadInterceptor)
+```
+
+Deprecated-декоратор `@FileUpload()` продолжает работать, но для нового кода следует использовать `TemporaryFileUploadInterceptor`.
+
+### Удаление временных файлов
+
+При `saveTemporaryFileAfterUpload: false` удаление созданного Multer временного файла теперь выполняет `TemporaryFileUploadInterceptor` после завершения обработчика запроса, в том числе если обработчик завершился ошибкой. Ошибки удаления отправляются в Sentry.
+
+Установите совместимую peer-зависимость, если её ещё нет в приложении:
+
+```json
+{
+  "dependencies": {
+    "@sentry/nestjs": "^10"
+  }
+}
+```
+
+`FileService.upload()` и `FileService.uploadImage()` больше не удаляют переданный `FileLocalSourceDto` или локальный путь автоматически. Если приложение программно загружает локальный файл и рассчитывало на прежнее удаление исходника, удалите его самостоятельно после завершения загрузки.
+
+### Обновление кастомных хранилищ
+
+Интерфейс `IFileLocalStorage` удалён. Методы перечисления файлов и получения времени создания теперь входят в общий контракт `IFileStorage`, чтобы очистка lost/temporary файлов могла работать не только с локальным диском, но и с S3.
+
+Если в приложении есть собственное хранилище, замените `IFileLocalStorage` на `IFileStorage` и реализуйте новые методы:
+
+```ts
+import {IFileStorage} from '@steroidsjs/nest-file/domain/interfaces/IFileStorage';
+
+export class CustomFileStorage implements IFileStorage {
+    // Остальные методы IFileStorage опущены.
+
+    async getFilesPaths(): Promise<string[] | null> {
+        // Верните относительные пути с разделителем `/` и без ведущего слеша.
+        return ['folder/file.jpg'];
+    }
+
+    async getFileCreateTimeMs(fileName: string): Promise<number> {
+        // Верните время создания или последнего изменения в миллисекундах.
+        return Date.now();
+    }
+}
+```
+
+Код, который напрямую вызывает `FileLocalStorage.getFilesPaths()`, также необходимо сделать асинхронным:
+
+```ts
+const paths = await fileLocalStorage.getFilesPaths();
+```
+
+### Явное подключение таблиц
+
+Если модуль приложения всё ещё собирает свои таблицы через удалённый `ModuleHelper.importDir`, замените динамический импорт явным списком:
+
+```ts
+// До
+import {ModuleHelper} from '@steroidsjs/nest/infrastructure/helpers/ModuleHelper';
+
+tables: [
+    ...coreModule.tables,
+    ...ModuleHelper.importDir(__dirname + '/tables'),
+],
+```
+
+```ts
+// После
+import nestFileTables from './tables';
+
+tables: [
+    ...coreModule.tables,
+    ...nestFileTables,
+],
+```
+
+Если у приложения нет собственных таблиц для файлового модуля, достаточно оставить `coreModule.tables`.
+
+### Настройка превью по fileType
+
+Обязательных действий не требуется. При необходимости кастомный `FileTypeService` теперь может вернуть карту `previews` вместе с остальными параметрами загрузки:
+
+```ts
+return DataMapper.create(FileUploadOptions, {
+    folder: 'images',
+    previews: {
+        thumbnail: {
+            enable: true,
+            width: 320,
+            height: 240,
+        },
+    },
+});
+```
+
+Ту же карту можно передать непосредственно в `FileUploadOptions.previews` для отдельной загрузки. Если она не задана, продолжает использоваться глобальная конфигурация `previews`.
+
+## [0.8.0](../CHANGELOG.md#080-2026-08-11) (2026-08-11)
+
+### Поддержка NestJS 11
+
+Новый релиз `@steroidsjs/nest-file` будет одновременно поддерживать NestJS 10 и NestJS 11.
+Обновление пакета не требует обязательного перехода на NestJS 11: приложение может остаться на NestJS 10, используя согласованные с ним версии интеграционных пакетов.
+
+Для перехода приложения на NestJS 11 обновите NestJS-зависимости согласованно:
+
+```json
+{
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/event-emitter": "^3.0.1",
+    "@nestjs/platform-express": "^11.1.28",
+    "@nestjs/schedule": "^6.0.1",
+    "@nestjs/swagger": "^11.4.6",
+    "@nestjs/typeorm": "^11.0.3"
+  }
+}
+```
+
+Перед обновлением также необходимо:
+
+1. Обновить `@steroidsjs/nest` до версии с поддержкой NestJS 11.
+2. Проверить `peerDependencies` остальных NestJS- и `@steroidsjs/*`-пакетов приложения.
+3. Не смешивать разные major-версии `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express` и `@nestjs/testing`.
+4. Для NestJS 11 использовать Swagger 11 и Schedule 5 или 6. Schedule 4 поддерживает только NestJS 10.
+
+Для приложения на NestJS 10 остаются совместимыми `@nestjs/platform-express` 10, Swagger 8 и Schedule 4–6.
+
+Минимальная версия Node.js для `@steroidsjs/nest-file` остаётся равна 22.
+
+### Переход на Express 5 и Multer 2
+
+`@nestjs/platform-express` использует Express 4 в NestJS 10 и Express 5 в NestJS 11.
+`@steroidsjs/nest-file` больше не устанавливает и не требует собственную версию Express, поэтому HTTP-платформа приложения определяет единственную используемую major-версию Express.
+
+Если приложение добавляло `express` только для совместимости с `@steroidsjs/nest-file`, прямую зависимость можно удалить. Если приложение напрямую использует runtime API Express, при переходе на NestJS 11 обновите его собственную зависимость до Express 5 и проверьте маршруты и middleware paths на соответствие новому синтаксису.
+
+Multer внутри `@steroidsjs/nest-file` обновлён до версии 2. Используемые пакетом `diskStorage`, `single`, `limits` и `fileFilter` сохранили прежние контракты, поэтому менять конфигурацию `FileUploadInterceptor` в приложении не требуется.
+
+Если приложение напрямую использует типы Express или Multer, обновите их:
+
+```json
+{
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.2.0"
+  }
+}
+```
+
+Для type-only использования импортируйте Express-типы следующим образом:
+
+```ts
+import type {Request, Response} from 'express';
+```
+
+### Обновление Schedule и Cron
+
+Поддерживаемый диапазон `@nestjs/schedule` расширен до major-версий 4–6, а внутренняя зависимость `cron` обновлена до версии 4.
+Публичная конфигурация `CronJobsRegister` не изменилась. Если приложение создаёт собственные экземпляры `CronJob`, при обновлении его прямой зависимости `cron` необходимо отдельно проверить их параметры по migration guide пакета Cron.
+
+### Проверка MIME-типа загружаемого файла
+
+Исправлен двойной вызов callback в `FileUploadInterceptor` при отклонении файла с недопустимым MIME-типом.
+Теперь такой файл однократно отклоняется с `UnsupportedMediaTypeException`; публичная конфигурация `mimeTypes` не изменилась.
+
+## [0.7.0](../CHANGELOG.md#070-2026-07-23) (2026-07-23)
+
+### Переход на оригинальные пакеты TypeORM
+
+Форки `@steroidsjs/typeorm` и `@steroidsjs/nest-typeorm` больше не используются.
+Удалите их из зависимостей приложения и подключите оригинальные пакеты:
+
+```json
+{
+  "dependencies": {
+    "@nestjs/typeorm": "^11.0.3",
+    "typeorm": "^1.1.0"
+  }
+}
+```
+
+Замените импорты:
+
+```ts
+// До
+import {InjectRepository} from '@steroidsjs/nest-typeorm';
+import {Index, Repository} from '@steroidsjs/typeorm';
+
+// После
+import {InjectRepository} from '@nestjs/typeorm';
+import {Index, Repository} from 'typeorm';
+```
+
+### Обновление NestJS и Steroids
+
+Зависимости приведены к версиям, совместимым с `@steroidsjs/nest@5.0.0-beta.1`.
+В приложении необходимо использовать как минимум следующие версии:
+
+```json
+{
+  "dependencies": {
+    "@nestjs/common": "^10.4.19",
+    "@nestjs/event-emitter": "^3.0.1",
+    "@nestjs/platform-express": "^10.4.19",
+    "@nestjs/typeorm": "^11.0.3",
+    "@steroidsjs/nest": "^5.0.0-beta.1",
+    "@steroidsjs/nest-modules": "^0.1.6",
+    "typeorm": "^1.1.0"
+  }
+}
+```
+
+Если проект напрямую использует `@nestjs/schematics` или `@nestjs/testing`, обновите их до `^10.2.3` и `^10.4.19` соответственно.
+
 ## [0.6.0](../CHANGELOG.md#060-2026-05-04) (2026-05-04)
 
 ### Lifetime для только что загруженных файлов

@@ -1,10 +1,11 @@
 import {Readable} from 'stream';
 import {toInteger as _toInteger} from 'lodash';
 import * as Minio from 'minio';
+import * as Sentry from '@sentry/node';
 import {DataMapper} from '@steroidsjs/nest/usecases/helpers/DataMapper';
 import {normalizeBoolean} from '@steroidsjs/nest/infrastructure/decorators/fields/BooleanField';
 import {Inject, Injectable, Optional, Scope} from '@nestjs/common';
-import {IFileStorage, IFileStorageConfig} from '../interfaces/IFileStorage';
+import {CANONICAL_PATH_SEPARATOR, IFileStorage, IFileStorageConfig} from '../interfaces/IFileStorage';
 import {FileWriteResult} from '../dtos/FileWriteResult';
 import {IFileReadable} from '../interfaces/IFileReadable';
 import {IFileWritable} from '../interfaces/IFileWritable';
@@ -171,6 +172,45 @@ export class MinioS3Storage implements IFileStorage {
             });
         }
         return this._client;
+    }
+
+    /**
+     * Converts a raw path (as returned by the storage driver) into the
+     * canonical form used by this module: CANONICAL_PATH_SEPARATOR only.
+     */
+    protected toCanonicalPath(rawPath: string) {
+        return rawPath
+            .replace(/\\/g, CANONICAL_PATH_SEPARATOR)
+            .replace(/^\/+/, '');
+    }
+
+    async getFilesPaths(relativePath = ''): Promise<string[] | null> {
+        try {
+            const client = this.getClient();
+            const filesPaths: string[] = [];
+            const filesStream = client.listObjectsV2(this.mainBucket, relativePath, true);
+
+            for await (const file of filesStream) {
+                if (file?.name && !file.name.endsWith('/')) {
+                    filesPaths.push(this.toCanonicalPath(file.name));
+                }
+            }
+
+            return filesPaths;
+        } catch (error) {
+            Sentry.captureException(error);
+            return [];
+        }
+    }
+
+    async getFileCreateTimeMs(fileName: string): Promise<number> {
+        const stat = await this.getClient().statObject(this.mainBucket, fileName);
+
+        if (!stat?.lastModified) {
+            throw new Error(`File ${fileName} has no lastModified date`);
+        }
+
+        return stat.lastModified.getTime();
     }
 
     async deleteFile(filePath: string): Promise<void> {

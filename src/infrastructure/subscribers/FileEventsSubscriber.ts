@@ -1,4 +1,4 @@
-import {Inject, Injectable} from '@nestjs/common';
+import {Injectable} from '@nestjs/common';
 import {OnEvent} from '@nestjs/event-emitter';
 import {FileRemovedEventDto} from '../../domain/dtos/events/FileRemovedEventDto';
 import {FileRemovedEventHandleUseCase} from '../../usecases/fileRemovedEventHandleUseCase/FileRemovedEventHandleUseCase';
