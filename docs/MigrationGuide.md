@@ -5,50 +5,69 @@
 ### Провайдинг хранилищ после обновления
 
 `FileStorageFactory` теперь получает именованные экземпляры хранилищ из конфигурации модуля.
-Если проект использует несколько экземпляров одного хранилища с разными настройками или кастомное хранилище, нужно описать каждое хранилище через `driver` и `options`.
+Каждое хранилище в `FileModule.config.storages` теперь описывается объектом с полями `driver` и `options`.
 
-1. Добавить настройки каждого хранилища в `FileModule.config.storages`.
-   Ключи в `storages` используются как `storageName`, а модуль резолвит `driver` для каждого ключа. Встроенные драйверы имеют scope `TRANSIENT`.
+`driver` — это класс, реализующий `IFileStorage`: `FileLocalStorage`, `MinioS3Storage` или пользовательская реализация.
+Ключ в `storages` становится `storageName`, а `options` передаются драйверу при инициализации. Один драйвер можно использовать под несколькими именами с разными настройками.
+
+#### Обновление конфигурации стандартных хранилищ
+
+Если проект использует только настройки из env и не задаёт `FileModule.config.storages`, изменять конфигурацию не требуется.
+Если проект переопределяет настройки `local` или `minio_s3`, нужно перейти на новый формат.
+
+До обновления:
 
 ```typescript
-import {MinioS3Storage} from '@steroidsjs/nest-file/domain/storages/MinioS3Storage';
-
-@Module({
-    ...coreModule,
-    config: () => {
-        const coreConfig = coreModule.config();
-        return {
-            ...coreConfig,
-            storages: {
-                ...coreConfig.storages,
-                minio_s3_1: {
-                    driver: MinioS3Storage,
-                    options: {
-                        mainBucket: 'files',
-                    },
-                },
-                minio_s3_2: {
-                    driver: MinioS3Storage,
-                    options: {
-                        mainBucket: 'images',
-                    },
-                },
-            },
-        };
+storages: {
+    local: {
+        rootPath: '/var/app/files',
+        rootUrl: '/files',
     },
-})
-export class FileModule {}
+}
 ```
 
-Для `MinioS3Storage` настройки подключения наследуются из env и `storages.minio_s3.options`; в `options` укажите только отличающиеся значения. 
-Для `FileLocalStorage` аналогично наследуются `rootPath` и `rootUrl` из env и `storages.local.options`.
+После обновления:
 
-2. Убрать передачу `fileStorageParams` в `IFileStorage.write`.
-   Реализовать `IGetFileStorageParamsUseCase`: его метод `handle` должен возвращать параметры записи в зависимости от `fileType` и `storageName`. Реализацию нужно запровайдить по токену `GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN`.
-   Полный пример приведён в разделе [«Параметры загрузки файла в хранилище»](../README.md#параметры-загрузки-файла-в-хранилище).
+```typescript
+import {FileLocalStorage} from '@steroidsjs/nest-file/domain/storages/FileLocalStorage';
 
-3. Если проект реализует собственное `IFileStorage`, обновить сигнатуру `write` и `init`. В `init` модуль передаёт `storageName` вместе с `options`; при необходимости сохраните это имя в классе хранилища для вызова `IGetFileStorageParamsUseCase`.
-   Добавьте драйвер в `providers` модуля и задайте ему scope `TRANSIENT`, чтобы каждое именованное хранилище получало отдельный экземпляр.
+storages: {
+    local: {
+        driver: FileLocalStorage,
+        options: {
+            rootPath: '/var/app/files',
+            rootUrl: '/files',
+        },
+    },
+}
+```
+
+Для `minio_s3` используется такой же формат с `driver: MinioS3Storage`.
+Старый формат без `driver` больше не поддерживается и приведёт к ошибке `Not found driver for storage: <storageName>` при запуске приложения.
+
+При добавлении хранилища на встроенном драйвере не нужно повторять всю конфигурацию. 
+Для `MinioS3Storage` по умолчанию используются настройки подключения стандартного хранилища `minio_s3`, а для `FileLocalStorage` — пути стандартного хранилища `local`.
+Эти настройки формируются из env и конфигурации модуля. В `options` нового хранилища укажите только значения, которые должны отличаться.
+Пример нескольких экземпляров одного драйвера приведён в разделе [«Провайдинг нескольких хранилищ»](../README.md#провайдинг-нескольких-хранилищ).
+
+#### Обновление публичных контрактов
+
+Если проект реализует собственное хранилище или переопределяет существующее, обновите контракт:
+
+1. `init()` теперь принимает `IFileStorageConfig`. В конфигурации передаются `storageName` и поля из `options`.
+2. `write()` теперь принимает только `file` и `source`. Аргумент `fileStorageParams` удалён.
+3. Добавьте пользовательский драйвер в `providers` модуля со scope `TRANSIENT`, чтобы каждое имя получало отдельный экземпляр.
+
+Все хранилища из `storages` инициализируются при запуске приложения: это позволяет асинхронно получить `TRANSIENT`-экземпляры через Nest DI, сохранив синхронный `FileStorageFactory.get()`.
+Конфигурация в `FileConfigService` подготавливается в конструкторе, поскольку она нужна для создания этих экземпляров до вызова `onModuleInit()`.
+
+`IGetFileStorageParamsUseCase` остаётся необязательным. В существующей реализации измените тип первого аргумента на `fileType: string | undefined`.
+Встроенные драйверы вызывают use case самостоятельно; пользовательский драйвер при необходимости должен инжектить `GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN` и вызывать `handle()` внутри `write()`.
+Пример приведён в разделе [«Параметры загрузки файла в хранилище»](../README.md#параметры-загрузки-файла-в-хранилище).
+
+Тип `storageName` в публичных моделях, DTO и интерфейсах изменён с `FileStorageEnum` на `string`. `FileStorageEnum` можно продолжать использовать как набор констант стандартных имён.
+
+Изменение `EnumField` на `StringField` для `storageName` не требует миграции базы данных: оба декоратора используют колонку `varchar`.
 
 ## [0.9.0](../CHANGELOG.md#090-2026-08-14) (2026-08-14)
 

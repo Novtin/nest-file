@@ -2,15 +2,19 @@
 
 ## Unreleased
 
-### Fixes
-
 [Migration guide](docs/MigrationGuide.md#unreleased)
 
-- `IFileStorage.write` больше не принимает в качестве аргумента `fileStorageParams`, вместо этого хранилища сами берут эти настройки
-из `IGetFileStorageParamsUseCase`
-- Конфигурация `storages` теперь описывает `driver` и `options` для каждого имени хранилища; модуль создаёт экземпляры автоматически
-- Хранилища имеют injection scope `TRANSIENT`, что позволяет создать несколько экземпляров одного хранилища с разным конфигом
-- Использование `FileStorageEnum` в качестве типа обновлено на `string`
+### Breaking Changes
+
+- Конфигурация `storages` переведена на определения `{driver, options}`; старый формат без `driver` больше не поддерживается. ([#26](https://github.com/steroids/nest-file/pull/26))
+- Обновлён контракт `IFileStorage`: `init()` принимает `IFileStorageConfig` со `storageName`, а `write()` больше не принимает `fileStorageParams`. Пользовательский драйвер нужно зарегистрировать в `providers` со scope `TRANSIENT`; при необходимости параметры записи он должен получать через `IGetFileStorageParamsUseCase` самостоятельно. ([#26](https://github.com/steroids/nest-file/pull/26))
+- `IGetFileStorageParamsUseCase.handle()` теперь принимает `fileType: string | undefined`. ([#26](https://github.com/steroids/nest-file/pull/26))
+- Тип `storageName` в публичных моделях, DTO и интерфейсах изменён с `FileStorageEnum` на `string`. ([#26](https://github.com/steroids/nest-file/pull/26))
+- Хранилища инициализируются при запуске приложения, а не при первом обращении. Для подготовки конфигурации до создания хранилищ `FileConfigService.init()` перенесён из `onModuleInit()` в конструктор. ([#26](https://github.com/steroids/nest-file/pull/26))
+
+### Features
+
+- Добавлена поддержка нескольких именованных экземпляров одного драйвера с разными настройками. ([#26](https://github.com/steroids/nest-file/pull/26))
 
 ## [0.9.0](https://github.com/steroids/nest-file/compare/0.8.0...0.9.0) (2026-08-14)
 

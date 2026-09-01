@@ -60,7 +60,7 @@ JUST_UPLOADED_TEMP_FILE_LIFETIME_S=10
 JUST_UPLOADED_UNUSED_FILE_LIFETIME_S=86400
 ```
 Описание переменных: 
-   - APP_FILE_STORAGE_NAME - тип используемого хранилища по-умолчанию (minio_s3 или local, из словаря FileStorageEnum)
+   - APP_FILE_STORAGE_NAME - имя хранилища по умолчанию. Может содержать любой ключ из `storages`; встроенные имена — `local` и `minio_s3`
    - APP_FILE_STORAGE_ROOT_PATH - место хранения файлов при использовании хранилища local (по-умолчанию join(process.cwd(), '../files/uploaded'))
    - APP_FILE_STORAGE_ROOT_URL - URL-префикс для ссылок на файлы (по-умолчанию /files/uploaded)
    - APP_FILE_MAX_SIZE_MB - максимальный размер файла в мегабайтах
@@ -85,7 +85,7 @@ JUST_UPLOADED_UNUSED_FILE_LIFETIME_S=86400
 
 По умолчанию модуль провайдит два хранилища: `local` и `minio_s3`.
 Если в проекте нужно использовать несколько экземпляров одного хранилища с разными настройками, добавьте их определения в `storages`.
-Ключи в `storages` используются как `storageName`, а `driver` определяет класс хранилища. Модуль самостоятельно резолвит драйвер для каждого ключа; встроенные драйверы имеют scope `TRANSIENT`.
+Ключи в `storages` используются как `storageName`. `driver` — это класс, реализующий `IFileStorage`, а `options` содержат настройки его конкретного экземпляра. Модуль самостоятельно резолвит драйвер для каждого ключа; встроенные драйверы имеют scope `TRANSIENT`.
 
 ```ts
 import coreModule from '@steroidsjs/nest-file';
@@ -126,8 +126,11 @@ enum StorageNameEnum {
 export class FileModule {}
 ```
 
-Для экземпляров `MinioS3Storage` автоматически используются стандартные S3-настройки из env и `storages.minio_s3.options`; в `options` достаточно указать отличающиеся значения. Аналогично `FileLocalStorage` наследует `rootPath` и `rootUrl` из env и `storages.local.options`.
+Если задан `APP_FILE_STORAGE_NAME`, он имеет приоритет над `defaultStorageName` из конфигурации. Для использования именованного хранилища обновите или удалите эту env-переменную.
+
+При добавлении хранилища на встроенном драйвере не нужно повторять всю конфигурацию. Для `MinioS3Storage` по умолчанию используются настройки подключения стандартного хранилища `minio_s3`, а для `FileLocalStorage` — пути стандартного хранилища `local`. Эти настройки формируются из env и конфигурации модуля. В `options` нового хранилища укажите только значения, которые должны отличаться.
 Пользовательский `driver` нужно добавить в `providers` модуля и объявить с Nest scope `TRANSIENT`, чтобы каждое имя хранилища получало отдельный экземпляр.
+Все настроенные драйверы создаются и получают `init()` при запуске приложения, а не при первом обращении.
 
 После этого нужное хранилище можно выбрать при загрузке:
 
@@ -140,10 +143,11 @@ await fileService.upload({
 
 ### Параметры загрузки файла в хранилище
 
-Если параметры записи зависят от `fileType` или имени хранилища, в проекте можно запровайдить сервис, реализующий `IGetFileStorageParamsUseCase`, по токену `GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN`.
-Хранилища вызывают этот use case при записи файла.
+`IGetFileStorageParamsUseCase` — необязательное расширение для параметров конкретной операции записи, зависящих от `fileType` или имени хранилища. Настройки подключения самого хранилища задаются отдельно в `storages`.
+Встроенные драйверы вызывают этот use case самостоятельно. Пользовательский драйвер при необходимости должен инжектить `GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN` и вызывать `handle()` внутри `write()`.
 
 ```ts
+import {Injectable} from '@nestjs/common';
 import {
     GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN,
     IGetFileStorageParamsUseCase,
