@@ -1,5 +1,5 @@
 import {DataMapper} from '@steroidsjs/nest/usecases/helpers/DataMapper';
-import {Inject, Optional} from '@nestjs/common';
+import {Inject} from '@nestjs/common';
 import * as sharp from 'sharp';
 import {FileModel} from '../../../domain/models/FileModel';
 import {IImagePreviewGenerator} from '../../../domain/interfaces/IImagePreviewGenerator';
@@ -11,10 +11,6 @@ import {IFileStorageFactory} from '../../../domain/interfaces/IFileStorageFactor
 import {FileHelper} from '../../../domain/helpers/FileHelper';
 import {SharpHelper} from '../../../domain/helpers/SharpHelper';
 import {FileSaveDto} from '../../../domain/dtos/FileSaveDto';
-import {
-    GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN,
-    IGetFileStorageParamsUseCase,
-} from '../../../usecases/getFileStorageParams/interfaces/IGetFileStorageParamsUseCase';
 import {SVG_MIME_TYPE} from './SvgImagePreviewGenerator';
 
 export class SharpImagePreviewGenerator implements IImagePreviewGenerator {
@@ -23,9 +19,6 @@ export class SharpImagePreviewGenerator implements IImagePreviewGenerator {
         public repository: IFileImageRepository,
         @Inject(IFileStorageFactory)
         private readonly fileStorageFactory: IFileStorageFactory,
-        @Optional()
-        @Inject(GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN)
-        protected readonly getFileStorageParamsUseCase?: IGetFileStorageParamsUseCase,
     ) {
     }
 
@@ -101,10 +94,6 @@ export class SharpImagePreviewGenerator implements IImagePreviewGenerator {
         });
 
         if (hasChanges) {
-            const fileStorageParams = this.getFileStorageParamsUseCase
-                ? await this.getFileStorageParamsUseCase.handle(file.fileType, file.storageName)
-                : null;
-
             await this.fileStorageFactory
                 .get(file.storageName)
                 .write(
@@ -113,9 +102,9 @@ export class SharpImagePreviewGenerator implements IImagePreviewGenerator {
                         folder: imageModel.folder,
                         fileName: imageModel.fileName,
                         fileMimeType: file.fileMimeType,
+                        fileType: file.fileType,
                     }),
                     data,
-                    fileStorageParams,
                 );
         }
 
