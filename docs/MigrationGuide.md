@@ -4,14 +4,15 @@
 
 ### Провайдинг хранилищ после обновления
 
-`FileStorageFactory` теперь получает хранилища из DI по токену `FILE_STORAGES_TOKEN`.
-Если проект использует стандартный `coreModule.module(config)` и не переопределяет провайдинг хранилищ, токен уже настроен внутри пакета.
-Если проект переопределяет providers, использует кастомные хранилища или несколько экземпляров одного хранилища с разными настройками, нужно:
+`FileStorageFactory` теперь получает именованные экземпляры хранилищ из конфигурации модуля.
+Если проект использует несколько экземпляров одного хранилища с разными настройками или кастомное хранилище, нужно описать каждое хранилище через `driver` и `options`.
 
 1. Добавить настройки каждого хранилища в `FileModule.config.storages`.
-   Ключи в `storages` будут использоваться как `storageName`.
+   Ключи в `storages` используются как `storageName`, а модуль резолвит `driver` для каждого ключа. Встроенные драйверы имеют scope `TRANSIENT`.
 
 ```typescript
+import {MinioS3Storage} from '@steroidsjs/nest-file/domain/storages/MinioS3Storage';
+
 @Module({
     ...coreModule,
     config: () => {
@@ -20,8 +21,18 @@
             ...coreConfig,
             storages: {
                 ...coreConfig.storages,
-                minio_s3_1: {},
-                minio_s3_2: {},
+                minio_s3_1: {
+                    driver: MinioS3Storage,
+                    options: {
+                        mainBucket: 'files',
+                    },
+                },
+                minio_s3_2: {
+                    driver: MinioS3Storage,
+                    options: {
+                        mainBucket: 'images',
+                    },
+                },
             },
         };
     },
@@ -29,22 +40,15 @@
 export class FileModule {}
 ```
 
-2. Запровайдить эти же ключи по токену `FILE_STORAGES_TOKEN`.
-   Для `TRANSIENT` хранилищ нужно использовать `moduleRef.resolve`, чтобы получить отдельный экземпляр для каждого имени.
+Для `MinioS3Storage` настройки подключения наследуются из env и `storages.minio_s3.options`; в `options` укажите только отличающиеся значения. 
+Для `FileLocalStorage` аналогично наследуются `rootPath` и `rootUrl` из env и `storages.local.options`.
 
-```typescript
-{
-    provide: FILE_STORAGES_TOKEN,
-    inject: [ModuleRef],
-    useFactory: async (moduleRef: ModuleRef) => ({
-        minio_s3_1: await moduleRef.resolve(MinioS3Storage),
-        minio_s3_2: await moduleRef.resolve(MinioS3Storage),
-    }),
-},
-```
+2. Убрать передачу `fileStorageParams` в `IFileStorage.write`.
+   Реализовать `IGetFileStorageParamsUseCase`: его метод `handle` должен возвращать параметры записи в зависимости от `fileType` и `storageName`. Реализацию нужно запровайдить по токену `GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN`.
+   Полный пример приведён в разделе [«Параметры загрузки файла в хранилище»](../README.md#параметры-загрузки-файла-в-хранилище).
 
-3. Убрать передачу `fileStorageParams` в `IFileStorage.write`.
-   Параметры записи, зависящие от `fileType` или `storageName`, нужно перенести в `IGetFileStorageParamsUseCase` и запровайдить его по токену `GET_FILE_STORAGE_PARAMS_USE_CASE_TOKEN`.
+3. Если проект реализует собственное `IFileStorage`, обновить сигнатуру `write` и `init`. В `init` модуль передаёт `storageName` вместе с `options`; при необходимости сохраните это имя в классе хранилища для вызова `IGetFileStorageParamsUseCase`.
+   Добавьте драйвер в `providers` модуля и задайте ему scope `TRANSIENT`, чтобы каждое именованное хранилище получало отдельный экземпляр.
 
 ## [0.6.0](../CHANGELOG.md#060-2026-05-04) (2026-05-04)
 

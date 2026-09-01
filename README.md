@@ -84,14 +84,17 @@ JUST_UPLOADED_UNUSED_FILE_LIFETIME_S=86400
 ## Провайдинг нескольких хранилищ
 
 По умолчанию модуль провайдит два хранилища: `local` и `minio_s3`.
-Если в проекте нужно использовать несколько экземпляров одного хранилища с разными настройками, добавьте настройки каждого хранилища в `storages` и запровайдите экземпляры по токену `FILE_STORAGES_TOKEN`.
-Ключи в `storages` используются как `storageName`.
+Если в проекте нужно использовать несколько экземпляров одного хранилища с разными настройками, добавьте их определения в `storages`.
+Ключи в `storages` используются как `storageName`, а `driver` определяет класс хранилища. Модуль самостоятельно резолвит драйвер для каждого ключа; встроенные драйверы имеют scope `TRANSIENT`.
 
 ```ts
-import {ModuleRef} from '@nestjs/core';
 import coreModule from '@steroidsjs/nest-file';
-import {FILE_STORAGES_TOKEN} from '@steroidsjs/nest-file/domain/interfaces/IFileStorage';
 import {MinioS3Storage} from '@steroidsjs/nest-file/domain/storages/MinioS3Storage';
+
+enum StorageNameEnum {
+    MINIO_S3_1 = 'minio_s3_1',
+    MINIO_S3_2 = 'minio_s3_2',
+}
 
 @Module({
     ...coreModule,
@@ -99,47 +102,39 @@ import {MinioS3Storage} from '@steroidsjs/nest-file/domain/storages/MinioS3Stora
         const coreConfig = coreModule.config();
         return {
             ...coreConfig,
-            defaultStorageName: 'minio_s3_1',
+            defaultStorageName: StorageNameEnum.MINIO_S3_1,
             storages: {
                 ...coreConfig.storages,
-                minio_s3_1: {
-                    mainBucket: 'files',
-                    rootUrl: 'https://storage.example.com/files',
+                [StorageNameEnum.MINIO_S3_1]: {
+                    driver: MinioS3Storage,
+                    options: {
+                        mainBucket: 'files',
+                        rootUrl: 'https://storage.example.com/files',
+                    },
                 },
-                minio_s3_2: {
-                    mainBucket: 'images',
-                    rootUrl: 'https://storage.example.com/images',
+                [StorageNameEnum.MINIO_S3_2]: {
+                    driver: MinioS3Storage,
+                    options: {
+                        mainBucket: 'images',
+                        rootUrl: 'https://storage.example.com/images',
+                    },
                 },
             },
-        };
-    },
-    module: (config) => {
-        const module = coreModule.module(config);
-        return {
-            ...module,
-            providers: [
-                ...module.providers,
-                {
-                    provide: FILE_STORAGES_TOKEN,
-                    inject: [ModuleRef],
-                    useFactory: async (moduleRef: ModuleRef) => ({
-                        minio_s3_1: await moduleRef.resolve(MinioS3Storage),
-                        minio_s3_2: await moduleRef.resolve(MinioS3Storage),
-                    }),
-                },
-            ],
         };
     },
 })
 export class FileModule {}
 ```
 
+Для экземпляров `MinioS3Storage` автоматически используются стандартные S3-настройки из env и `storages.minio_s3.options`; в `options` достаточно указать отличающиеся значения. Аналогично `FileLocalStorage` наследует `rootPath` и `rootUrl` из env и `storages.local.options`.
+Пользовательский `driver` нужно добавить в `providers` модуля и объявить с Nest scope `TRANSIENT`, чтобы каждое имя хранилища получало отдельный экземпляр.
+
 После этого нужное хранилище можно выбрать при загрузке:
 
 ```ts
 await fileService.upload({
     source,
-    storageName: 'minio_s3_2',
+    storageName: StorageNameEnum.MINIO_S3_2,
 });
 ```
 
@@ -157,7 +152,7 @@ import {
 @Injectable()
 class GetFileStorageParamsUseCase implements IGetFileStorageParamsUseCase {
     async handle(fileType: string | undefined, storageName: string) {
-        if (storageName === 'minio_s3_2' && fileType === 'avatar') {
+        if (storageName === StorageNameEnum.MINIO_S3_2 && fileType === 'avatar') {
             return {
                 'Cache-Control': 'public, max-age=31536000',
             };

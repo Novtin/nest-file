@@ -1,11 +1,14 @@
 import {join} from 'path';
 import {toInteger as _toInteger} from 'lodash';
-import {Injectable, OnModuleInit} from '@nestjs/common';
+import {Injectable} from '@nestjs/common';
 import {CronExpression} from '@nestjs/schedule';
 import {normalizeBoolean} from '@steroidsjs/nest/infrastructure/decorators/fields/BooleanField';
 import FileStorageEnum from '../enums/FileStorageEnum';
 import FilePreviewEnum from '../enums/FilePreviewEnum';
 import {IFilePreviewOptions} from '../interfaces/IFilePreviewOptions';
+import {IFileStorageDefinition} from '../interfaces/IFileStorageDefinition';
+import {FileLocalStorage} from '../storages/FileLocalStorage';
+import {MinioS3Storage} from '../storages/MinioS3Storage';
 import {IFileModuleConfig} from '../../infrastructure/config';
 
 const DEFAULT_JUST_UPLOADED_TEMP_FILE_LIFETIME_S = 10;
@@ -13,10 +16,17 @@ const DEFAULT_JUST_UPLOADED_TEMP_FILE_LIFETIME_S = 10;
 const DEFAULT_JUST_UPLOADED_UNUSED_FILE_LIFETIME_S = 24 * 60 * 60;
 
 const getStoragesConfig = (storagesConfig: IFileModuleConfig['storages'] = {}) => {
+    const localStorageOptions = storagesConfig[FileStorageEnum.LOCAL]?.driver === FileLocalStorage
+        ? storagesConfig[FileStorageEnum.LOCAL].options
+        : {};
+    const minioS3StorageOptions = storagesConfig[FileStorageEnum.MINIO_S3]?.driver === MinioS3Storage
+        ? storagesConfig[FileStorageEnum.MINIO_S3].options
+        : {};
+
     const localStorageConfig = {
         rootPath: process.env.APP_FILE_STORAGE_ROOT_PATH || join(process.cwd(), '../files/uploaded'),
         rootUrl: process.env.APP_FILE_STORAGE_ROOT_URL || '/files/uploaded',
-        ...storagesConfig[FileStorageEnum.LOCAL],
+        ...localStorageOptions,
     };
     const minioS3Config = {
         host: process.env.APP_FILE_STORAGE_S3_HOST || '127.0.0.1',
@@ -27,21 +37,46 @@ const getStoragesConfig = (storagesConfig: IFileModuleConfig['storages'] = {}) =
         region: process.env.APP_FILE_STORAGE_S3_REGION || 'us-east-1',
         mainBucket: process.env.APP_FILE_STORAGE_S3_MAIN_BUCKET || 'main',
         rootUrl: process.env.APP_FILE_STORAGE_ROOT_URL || '/files/uploaded',
-        ...storagesConfig[FileStorageEnum.MINIO_S3],
+        ...minioS3StorageOptions,
     };
 
-    delete storagesConfig[FileStorageEnum.LOCAL];
-    delete storagesConfig[FileStorageEnum.MINIO_S3];
+    const defaultStorages: Record<string, IFileStorageDefinition> = {
+        [FileStorageEnum.LOCAL]: {
+            driver: FileLocalStorage,
+            options: localStorageConfig,
+        },
+        [FileStorageEnum.MINIO_S3]: {
+            driver: MinioS3Storage,
+            options: minioS3Config,
+        },
+    };
 
-    return {
-        [FileStorageEnum.LOCAL]: localStorageConfig,
-        [FileStorageEnum.MINIO_S3]: minioS3Config,
+    return Object.fromEntries(Object.entries({
+        ...defaultStorages,
         ...storagesConfig,
-    };
+    }).map(([storageName, definition]) => {
+        if (!definition.driver) {
+            throw new Error(`Not found driver for storage: ${storageName}`);
+        }
+
+        const defaultOptions = definition.driver === FileLocalStorage
+            ? localStorageConfig
+            : definition.driver === MinioS3Storage
+                ? minioS3Config
+                : {};
+
+        return [storageName, {
+            ...definition,
+            options: {
+                ...defaultOptions,
+                ...definition.options,
+            },
+        }];
+    }));
 };
 
 @Injectable()
-export class FileConfigService implements OnModuleInit, IFileModuleConfig {
+export class FileConfigService implements IFileModuleConfig {
     /**
      * Default storage (local)
      * Env:
@@ -50,18 +85,13 @@ export class FileConfigService implements OnModuleInit, IFileModuleConfig {
     public defaultStorageName: string;
 
     /**
-     * Configurations for storages
+     * Definitions of named storages
+     * Each definition contains a driver and its options.
      * Env:
      *  - APP_FILE_STORAGE_ROOT_PATH
      *  - APP_FILE_STORAGE_ROOT_URL
      */
-    public storages: {
-        local?: {
-            rootPath?: string,
-            rootUrl?: string,
-        },
-        [key: string]: any,
-    };
+    public storages: Record<string, IFileStorageDefinition>;
 
     /**
      * Configurations for create previews images
@@ -147,9 +177,6 @@ export class FileConfigService implements OnModuleInit, IFileModuleConfig {
     constructor(
         private custom: IFileModuleConfig,
     ) {
-    }
-
-    onModuleInit() {
         this.init(this.custom);
     }
 

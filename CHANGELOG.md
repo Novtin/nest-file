@@ -4,12 +4,12 @@
 
 ### Fixes
 
-[Migration guide]()
+[Migration guide](docs/MigrationGuide.md#unreleased)
 
 - `IFileStorage.write` больше не принимает в качестве аргумента `fileStorageParams`, вместо этого хранилища сами берут эти настройки
 из `IGetFileStorageParamsUseCase`
-- Добавлен токен `FILE_STORAGES_TOKEN`, по которому провайдится объект с хранилищами и их названиями
-- Хранилища теперь имеют injection scope `TRANSIENT`, что позволяет создать несколько экземпляров одного хранилища с разным конфигом
+- Конфигурация `storages` теперь описывает `driver` и `options` для каждого имени хранилища; модуль создаёт экземпляры автоматически
+- Хранилища имеют injection scope `TRANSIENT`, что позволяет создать несколько экземпляров одного хранилища с разным конфигом
 - Использование `FileStorageEnum` в качестве типа обновлено на `string`
 
 ## [0.6.0](https://github.com/steroids/nest-file/compare/0.5.0...0.6.0) (2026-05-04)

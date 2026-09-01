@@ -9,6 +9,7 @@ import * as Sentry from '@sentry/node';
 import {Inject, Injectable, Optional, Scope} from '@nestjs/common';
 import {FileWriteResult} from '../dtos/FileWriteResult';
 import {IFileLocalStorage} from '../interfaces/IFileLocalStorage';
+import {IFileStorageConfig} from '../interfaces/IFileStorage';
 import {IFileReadable} from '../interfaces/IFileReadable';
 import {IFileWritable} from '../interfaces/IFileWritable';
 import FileStorageEnum from '../enums/FileStorageEnum';
@@ -42,7 +43,7 @@ export class FileLocalStorage implements IFileLocalStorage {
     ) {
     }
 
-    public init(config: any) {
+    public init(config: IFileStorageConfig) {
         this.rootPath = config?.rootPath;
         this.rootUrl = config?.rootUrl;
         this.storageName = config?.storageName ?? FileStorageEnum.LOCAL;

@@ -9,7 +9,6 @@ import {FileConfigService} from '../domain/services/FileConfigService';
 import {FileStorageFactory} from '../domain/services/FileStorageFactory';
 import {FileLocalStorage} from '../domain/storages/FileLocalStorage';
 import {MinioS3Storage} from '../domain/storages/MinioS3Storage';
-import FileStorageEnum from '../domain/enums/FileStorageEnum';
 import {DeleteLostAndTemporaryFilesService} from '../domain/services/DeleteLostAndTemporaryFilesService';
 import {FileRemovedEventHandleUseCase} from '../usecases/fileRemovedEventHandleUseCase/FileRemovedEventHandleUseCase';
 import {IFileTypeService} from '../domain/interfaces/IFileTypeService';
@@ -65,11 +64,17 @@ export default (config: IFileModuleConfig) => ({
 
         {
             provide: FILE_STORAGES_TOKEN,
-            inject: [ModuleRef],
-            useFactory: async (moduleRef: ModuleRef) => ({
-                [FileStorageEnum.LOCAL]: await moduleRef.resolve(FileLocalStorage),
-                [FileStorageEnum.MINIO_S3]: await moduleRef.resolve(MinioS3Storage),
-            }),
+            inject: [ModuleRef, FileConfigService],
+            useFactory: async (moduleRef: ModuleRef, fileConfigService: FileConfigService) => Object.fromEntries(
+                await Promise.all(Object.entries(fileConfigService.storages).map(async ([storageName, definition]) => {
+                    const storage = await moduleRef.resolve(definition.driver);
+                    storage.init({
+                        storageName,
+                        ...definition.options,
+                    });
+                    return [storageName, storage];
+                })),
+            ),
         },
 
         {

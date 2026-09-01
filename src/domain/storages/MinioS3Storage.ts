@@ -4,7 +4,7 @@ import * as Minio from 'minio';
 import {DataMapper} from '@steroidsjs/nest/usecases/helpers/DataMapper';
 import {normalizeBoolean} from '@steroidsjs/nest/infrastructure/decorators/fields/BooleanField';
 import {Inject, Injectable, Optional, Scope} from '@nestjs/common';
-import {IFileStorage} from '../interfaces/IFileStorage';
+import {IFileStorage, IFileStorageConfig} from '../interfaces/IFileStorage';
 import {FileWriteResult} from '../dtos/FileWriteResult';
 import {IFileReadable} from '../interfaces/IFileReadable';
 import {IFileWritable} from '../interfaces/IFileWritable';
@@ -47,7 +47,7 @@ export class MinioS3Storage implements IFileStorage {
     ) {
     }
 
-    public init(config: any) {
+    public init(config: IFileStorageConfig) {
         this.host = config?.host;
         this.port = _toInteger(config?.port);
         this.isUseSsl = normalizeBoolean(config?.isUseSsl);
